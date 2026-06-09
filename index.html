@@ -41,7 +41,6 @@ canvas.hidden{display:none}
 <div class="container">
   <div class="card">
     <h1>Analisador CL online com ROI circular</h1>
-    <p>Abra a câmera, posicione o ROI circular sobre a cela de fluxo, ajuste o diâmetro e trave o ROI. Cada corrida pausada é adicionada automaticamente ao conjunto como corrida_001, corrida_002, corrida_003 etc. O CSV exporta o conjunto completo, com estatística das corridas, replicatas individuais dos máximos e série temporal completa. Após pausar cada corrida, a tela mostra também a média dos máximos de G_mean, B_mean e R_mean da corrida finalizada.</p>
   </div>
 
   <div class="grid">
@@ -58,6 +57,11 @@ canvas.hidden{display:none}
       </div>
 
       <div class="row">
+        <button id="lockRoiBtn" class="secondary" disabled>Travar ROI</button>
+        <button id="copyRoiBtn" class="secondary" disabled>Copiar ROI</button>
+      </div>
+
+      <div class="row">
         <button id="startRunBtn" class="primary" disabled>Iniciar aquisição</button>
         <button id="pauseRunBtn" class="danger" disabled>Pausar e calcular máximos</button>
       </div>
@@ -66,10 +70,7 @@ canvas.hidden{display:none}
         <button id="downloadBtn" class="secondary" disabled>Exportar CSV completo</button>
         <button id="clearAllBtn" class="danger" disabled>Limpar conjunto</button>
       </div>
-
-      <div class="ok">Depois de abrir a câmera, o ROI aparece no centro. Arraste o círculo vermelho para a cela, ajuste o diâmetro e clique em <strong>Travar ROI</strong>. Ao iniciar a aquisição, o ROI também é travado automaticamente.</div>
-
-      <div class="summary-values">
+<div class="summary-values">
         <div class="summary-box">G_mean máximo médio<strong id="avgGBox">—</strong></div>
         <div class="summary-box">B_mean máximo médio<strong id="avgBBox">—</strong></div>
         <div class="summary-box">R_mean máximo médio<strong id="avgRBox">—</strong></div>
@@ -130,9 +131,7 @@ canvas.hidden{display:none}
         <p><strong>Pontos da corrida atual:</strong> <span id="pointCount">0</span></p>
         <p><strong>Corridas no conjunto:</strong> <span id="setCount">0</span></p>
       </div>
-
-      <div class="warn">A série temporal não é mostrada na tela. Ela é salva no CSV em <strong>serie_temporal</strong>. A tela mostra média, desvio padrão e coeficiente de variação dos máximos. As replicatas individuais ficam salvas no CSV em <strong>resumo_picos</strong>.</div>
-      <div id="status" class="status">Abra a câmera para começar.</div>
+<div id="status" class="status">Abra a câmera para começar.</div>
     </div>
   </div>
 
@@ -264,10 +263,12 @@ function updateButtons(){
   startRunBtn.disabled=!hasCamera||!roi||isRunning;
   pauseRunBtn.disabled=!isRunning;
   applyManualRoiBtn.disabled=!hasCamera||isRunning||roiLocked;
-  copyRoiBtn.disabled=!roi;
-  lockRoiBtn.disabled=!roi || isRunning;
-  lockRoiBtn.textContent=roiLocked ? "Destravar ROI" : "Travar ROI";
-  lockRoiBtn.className=roiLocked ? "green" : "secondary";
+  if(copyRoiBtn) copyRoiBtn.disabled=!roi;
+  if(lockRoiBtn){
+    lockRoiBtn.disabled=!roi || isRunning;
+    lockRoiBtn.textContent=roiLocked ? "Destravar ROI" : "Travar ROI";
+    lockRoiBtn.className=roiLocked ? "green" : "secondary";
+  }
   downloadBtn.disabled=allRuns.length===0;
   clearAllBtn.disabled=allRuns.length===0||isRunning;
 }
@@ -398,33 +399,57 @@ applyManualRoiBtn.addEventListener("click",()=>{
   if(!Number.isFinite(cx)||!Number.isFinite(cy)||!Number.isFinite(r)||r<2){alert("Preencha centro x, centro y e raio com valores válidos.");return}
   roi={cx,cy,r};updateRoiInfo();statusEl.textContent=`ROI manual aplicado: x=${cx}, y=${cy}, raio=${r}.`;
 });
-lockRoiBtn.addEventListener("click",()=>{
-  if(!roi)return;
-  roiLocked=!roiLocked;
-  updateRoiInfo();
-  statusEl.textContent=roiLocked
-    ? "ROI travado. A posição e o diâmetro não serão alterados por toque acidental."
-    : "ROI destravado. Você pode mover o círculo e ajustar o diâmetro.";
-  updateButtons();
-});
+if(lockRoiBtn){
+  lockRoiBtn.addEventListener("click",()=>{
+    if(!roi)return;
+    roiLocked=!roiLocked;
+    updateRoiInfo();
+    statusEl.textContent=roiLocked
+      ? "ROI travado."
+      : "ROI destravado.";
+    updateButtons();
+  });
+}
 
-copyRoiBtn.addEventListener("click",async()=>{
-  if(!roi)return;
-  const txt=`centro x=${roi.cx}, y=${roi.cy}, raio=${roi.r} px, diâmetro=${roi.r*2} px, área≈${Math.round(Math.PI*roi.r*roi.r)} px`;
-  try{await navigator.clipboard.writeText(txt);statusEl.textContent=`ROI copiado: ${txt}`}catch(e){statusEl.textContent=`ROI atual: ${txt}`}
-});
+if(copyRoiBtn){
+  copyRoiBtn.addEventListener("click",async()=>{
+    if(!roi)return;
+    const txt=`centro x=${roi.cx}, y=${roi.cy}, raio=${roi.r} px, diâmetro=${roi.r*2} px, área≈${Math.round(Math.PI*roi.r*roi.r)} px`;
+    try{await navigator.clipboard.writeText(txt);statusEl.textContent=`ROI copiado: ${txt}`}catch(e){statusEl.textContent=`ROI atual: ${txt}`}
+  });
+}
 
 async function startCamera(){
   try{
-    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:1280},height:{ideal:720},frameRate:{ideal:30}},audio:false});
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      throw new Error("getUserMedia não disponível neste navegador.");
+    }
+
+    try{
+      stream=await navigator.mediaDevices.getUserMedia({
+        video:{facingMode:{ideal:"environment"},width:{ideal:1280},height:{ideal:720},frameRate:{ideal:30}},
+        audio:false
+      });
+    }catch(firstErr){
+      stream=await navigator.mediaDevices.getUserMedia({video:true,audio:false});
+    }
+
     video.srcObject=stream;
-    await new Promise(resolve=>video.onloadedmetadata=resolve);
+    await video.play().catch(()=>{});
+    await new Promise(resolve=>{
+      if(video.videoWidth) resolve();
+      else video.onloadedmetadata=resolve;
+    });
+
     cameraInfo.textContent=`aberta (${video.videoWidth} × ${video.videoHeight})`;
-    resizeOverlay();createDefaultRoi();
-    statusEl.textContent="Câmera aberta. Posicione o ROI sobre a cela e ajuste o diâmetro.";
+    resizeOverlay();
+    createDefaultRoi();
+    statusEl.textContent="Câmera aberta.";
     updateButtons();
   }catch(err){
-    statusEl.textContent="Erro ao abrir câmera: "+err.message+"\nUse HTTPS/GitHub Pages e permita acesso à câmera.";
+    const msg="Erro ao abrir câmera: "+err.message+"\nVerifique permissão da câmera e abra pelo link HTTPS do GitHub Pages.";
+    statusEl.textContent=msg;
+    alert(msg);
   }
 }
 function stopCamera(){
