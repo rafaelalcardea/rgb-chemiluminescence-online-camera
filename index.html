@@ -30,6 +30,9 @@ video{display:block;width:100%;max-height:660px;background:#000}
 .box{background:#f8fafc;border:1px solid var(--border);border-radius:12px;padding:10px;text-align:center}.box strong{display:block;font-size:23px;margin-top:4px}
 .table-wrap{overflow:auto;border:1px solid var(--border);border-radius:12px;margin-top:10px}
 table{width:100%;border-collapse:collapse;font-size:13px}th,td{border:1px solid var(--border);padding:8px;text-align:right}th{text-align:center;background:#f8fafc}td:first-child,td:nth-child(2){text-align:center}
+.summary-values{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:12px}
+.summary-box{background:#f8fafc;border:1px solid var(--border);border-radius:12px;padding:12px;text-align:center}
+.summary-box strong{display:block;font-size:24px;margin-top:5px}
 canvas.hidden{display:none}
 @media(max-width:980px){.grid{grid-template-columns:1fr}.row3{grid-template-columns:1fr}}
 </style>
@@ -38,7 +41,7 @@ canvas.hidden{display:none}
 <div class="container">
   <div class="card">
     <h1>Analisador CL online com ROI circular</h1>
-    <p>Abra a câmera, posicione o ROI circular sobre a cela de fluxo e ajuste o diâmetro. Durante a aquisição, os pontos são guardados internamente. Ao pausar, o app calcula e exibe somente G_mean, B_mean e R_mean máximos de cada replicata. O CSV exporta os máximos e também toda a série temporal para construção de gráfico intensidade × tempo.</p>
+    <p>Abra a câmera, posicione o ROI circular sobre a cela de fluxo, ajuste o diâmetro e trave o ROI. Cada corrida pausada é adicionada automaticamente ao conjunto como corrida_001, corrida_002, corrida_003 etc. O CSV exporta o conjunto completo, com estatística das corridas, replicatas individuais dos máximos e série temporal completa. Após pausar cada corrida, a tela mostra também a média dos máximos de G_mean, B_mean e R_mean da corrida finalizada.</p>
   </div>
 
   <div class="grid">
@@ -60,16 +63,16 @@ canvas.hidden{display:none}
       </div>
 
       <div class="row">
-        <button id="clearRunBtn" class="secondary">Limpar resultado</button>
-        <button id="downloadBtn" class="secondary" disabled>Baixar CSV</button>
+        <button id="downloadBtn" class="secondary" disabled>Exportar CSV completo</button>
+        <button id="clearAllBtn" class="danger" disabled>Limpar conjunto</button>
       </div>
 
-      <div class="ok">Depois de abrir a câmera, o ROI aparece no centro. Arraste o círculo vermelho para a região da cela. Para alterar o tamanho, use o diâmetro ou arraste uma das bolinhas brancas da borda.</div>
+      <div class="ok">Depois de abrir a câmera, o ROI aparece no centro. Arraste o círculo vermelho para a cela, ajuste o diâmetro e clique em <strong>Travar ROI</strong>. Ao iniciar a aquisição, o ROI também é travado automaticamente.</div>
 
-      <div class="live">
-        <div class="box">R_mean atual<strong id="liveR">—</strong></div>
-        <div class="box">G_mean atual<strong id="liveG">—</strong></div>
-        <div class="box">B_mean atual<strong id="liveB">—</strong></div>
+      <div class="summary-values">
+        <div class="summary-box">G_mean máximo médio<strong id="avgGBox">—</strong></div>
+        <div class="summary-box">B_mean máximo médio<strong id="avgBBox">—</strong></div>
+        <div class="summary-box">R_mean máximo médio<strong id="avgRBox">—</strong></div>
       </div>
 
       <canvas id="processingCanvas" class="hidden"></canvas>
@@ -95,10 +98,7 @@ canvas.hidden{display:none}
         <div><label for="manualRInput">Raio</label><input id="manualRInput" type="number" min="2" step="1"></div>
       </div>
 
-      <div class="row">
-        <button id="applyManualRoiBtn" class="secondary" disabled>Aplicar ROI manual</button>
-        <button id="copyRoiBtn" class="secondary" disabled>Copiar ROI</button>
-      </div>
+      <button id="applyManualRoiBtn" class="secondary" disabled>Aplicar ROI manual</button>
 
       <div class="row">
         <div><label for="numPeaksInput">Número de replicatas/picos</label><input id="numPeaksInput" type="number" min="1" step="1" value="3"></div>
@@ -126,22 +126,24 @@ canvas.hidden{display:none}
         <p><strong>Câmera:</strong> <span id="cameraInfo">fechada</span></p>
         <p><strong>ROI:</strong> <span id="roiInfo">não selecionado</span></p>
         <p><strong>Aquisição:</strong> <span id="runInfo">parada</span></p>
-        <p><strong>Pontos guardados:</strong> <span id="pointCount">0</span></p>
+        <p><strong>Corrida atual:</strong> <span id="currentRunInfo">—</span></p>
+        <p><strong>Pontos da corrida atual:</strong> <span id="pointCount">0</span></p>
+        <p><strong>Corridas no conjunto:</strong> <span id="setCount">0</span></p>
       </div>
 
-      <div class="warn">A série temporal não é mostrada na tela para não poluir a análise. Ela é salva no CSV em <strong>serie_temporal</strong>.</div>
+      <div class="warn">A série temporal não é mostrada na tela. Ela é salva no CSV em <strong>serie_temporal</strong>. A tela mostra média, desvio padrão e coeficiente de variação dos máximos. As replicatas individuais ficam salvas no CSV em <strong>resumo_picos</strong>.</div>
       <div id="status" class="status">Abra a câmera para começar.</div>
     </div>
   </div>
 
   <div class="card">
-    <h2>Máximos das replicatas</h2>
+    <h2>Resumo estatístico dos máximos</h2>
     <div class="table-wrap">
       <table id="peakTable">
         <thead>
-          <tr><th>replicata</th><th>G_mean máximo</th><th>B_mean máximo</th><th>R_mean máximo</th></tr>
+          <tr><th>corrida</th><th>G_mean médio</th><th>G DP</th><th>G CV (%)</th><th>B_mean médio</th><th>B DP</th><th>B CV (%)</th><th>R_mean médio</th><th>R DP</th><th>R CV (%)</th></tr>
         </thead>
-        <tbody><tr><td colspan="4" style="text-align:center;color:#6b7280">Nenhuma corrida finalizada ainda.</td></tr></tbody>
+        <tbody><tr><td colspan="10" style="text-align:center;color:#6b7280">Nenhuma corrida adicionada ainda.</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -158,8 +160,8 @@ const startCameraBtn=document.getElementById("startCameraBtn");
 const stopCameraBtn=document.getElementById("stopCameraBtn");
 const startRunBtn=document.getElementById("startRunBtn");
 const pauseRunBtn=document.getElementById("pauseRunBtn");
-const clearRunBtn=document.getElementById("clearRunBtn");
 const downloadBtn=document.getElementById("downloadBtn");
+const clearAllBtn=document.getElementById("clearAllBtn");
 
 const diameterInput=document.getElementById("diameterInput");
 const diameterSlider=document.getElementById("diameterSlider");
@@ -168,6 +170,7 @@ const manualCyInput=document.getElementById("manualCyInput");
 const manualRInput=document.getElementById("manualRInput");
 const applyManualRoiBtn=document.getElementById("applyManualRoiBtn");
 const copyRoiBtn=document.getElementById("copyRoiBtn");
+const lockRoiBtn=document.getElementById("lockRoiBtn");
 
 const numPeaksInput=document.getElementById("numPeaksInput");
 const minDistanceInput=document.getElementById("minDistanceInput");
@@ -179,18 +182,80 @@ const separatorInput=document.getElementById("separatorInput");
 const cameraInfo=document.getElementById("cameraInfo");
 const roiInfo=document.getElementById("roiInfo");
 const runInfo=document.getElementById("runInfo");
+const currentRunInfo=document.getElementById("currentRunInfo");
 const pointCount=document.getElementById("pointCount");
+const setCount=document.getElementById("setCount");
 const statusEl=document.getElementById("status");
-const liveR=document.getElementById("liveR");
-const liveG=document.getElementById("liveG");
-const liveB=document.getElementById("liveB");
 const peakBody=document.querySelector("#peakTable tbody");
+const avgGBox=document.getElementById("avgGBox");
+const avgBBox=document.getElementById("avgBBox");
+const avgRBox=document.getElementById("avgRBox");
 
 let stream=null, roi=null, isRunning=false, acquisitionStart=0, lastCaptureTime=0, animationId=null;
 let rows=[], peaks=[];
+let allRuns=[];
+let runCounter=0;
+let currentRunName="";
+let roiLocked=false;
 let pointerActive=false, pointerMode=null, dragOffset={x:0,y:0};
 
 function br(v){if(v===null||v===undefined||v==="")return "—";return String(v).replace(".",",")}
+function meanOfPeaks(peaksArr,key){
+  if(!peaksArr || peaksArr.length===0)return null;
+  let s=0,n=0;
+  for(const p of peaksArr){
+    const v=Number(p[key]);
+    if(Number.isFinite(v)){s+=v;n++;}
+  }
+  return n ? s/n : null;
+}
+function sdOfPeaks(peaksArr,key){
+  if(!peaksArr || peaksArr.length<2)return null;
+  const m=meanOfPeaks(peaksArr,key);
+  if(m===null)return null;
+  let s=0,n=0;
+  for(const p of peaksArr){
+    const v=Number(p[key]);
+    if(Number.isFinite(v)){s+=(v-m)*(v-m);n++;}
+  }
+  return n>1 ? Math.sqrt(s/(n-1)) : null;
+}
+function cvOfPeaks(peaksArr,key){
+  const m=meanOfPeaks(peaksArr,key);
+  const sd=sdOfPeaks(peaksArr,key);
+  if(m===null || sd===null || m===0)return null;
+  return (sd/m)*100;
+}
+function fmtStat(v){
+  return v===null || !Number.isFinite(v) ? "—" : v.toFixed(3).replace(".",",");
+}
+function statsForPeaks(peaksArr){
+  return {
+    G_mean_avg: meanOfPeaks(peaksArr,"G_mean"),
+    G_mean_sd: sdOfPeaks(peaksArr,"G_mean"),
+    G_mean_cv: cvOfPeaks(peaksArr,"G_mean"),
+    B_mean_avg: meanOfPeaks(peaksArr,"B_mean"),
+    B_mean_sd: sdOfPeaks(peaksArr,"B_mean"),
+    B_mean_cv: cvOfPeaks(peaksArr,"B_mean"),
+    R_mean_avg: meanOfPeaks(peaksArr,"R_mean"),
+    R_mean_sd: sdOfPeaks(peaksArr,"R_mean"),
+    R_mean_cv: cvOfPeaks(peaksArr,"R_mean")
+  };
+}
+function showRunPeakMeans(peaksArr){
+  const g=meanOfPeaks(peaksArr,"G_mean");
+  const b=meanOfPeaks(peaksArr,"B_mean");
+  const r=meanOfPeaks(peaksArr,"R_mean");
+  avgGBox.textContent = g===null ? "—" : g.toFixed(3).replace(".",",");
+  avgBBox.textContent = b===null ? "—" : b.toFixed(3).replace(".",",");
+  avgRBox.textContent = r===null ? "—" : r.toFixed(3).replace(".",",");
+}
+function clearRunPeakMeans(){
+  avgGBox.textContent="—";
+  avgBBox.textContent="—";
+  avgRBox.textContent="—";
+}
+function pad3(n){return String(n).padStart(3,"0")}
 function fmt(v,n=2){return Number(v).toFixed(n)}
 function updateButtons(){
   const hasCamera=!!stream;
@@ -198,9 +263,18 @@ function updateButtons(){
   stopCameraBtn.disabled=!hasCamera;
   startRunBtn.disabled=!hasCamera||!roi||isRunning;
   pauseRunBtn.disabled=!isRunning;
-  applyManualRoiBtn.disabled=!hasCamera||isRunning;
+  applyManualRoiBtn.disabled=!hasCamera||isRunning||roiLocked;
   copyRoiBtn.disabled=!roi;
-  downloadBtn.disabled=rows.length===0;
+  lockRoiBtn.disabled=!roi || isRunning;
+  lockRoiBtn.textContent=roiLocked ? "Destravar ROI" : "Travar ROI";
+  lockRoiBtn.className=roiLocked ? "green" : "secondary";
+  downloadBtn.disabled=allRuns.length===0;
+  clearAllBtn.disabled=allRuns.length===0||isRunning;
+}
+function updateSetInfo(){
+  setCount.textContent=allRuns.length;
+  downloadBtn.disabled=allRuns.length===0;
+  clearAllBtn.disabled=allRuns.length===0||isRunning;
 }
 function resizeOverlay(){
   const rect=video.getBoundingClientRect();
@@ -252,20 +326,28 @@ function updateRoiInfo(){
   if(!roi){roiInfo.textContent="não selecionado";updateButtons();return}
   clampRoi();
   const area=Math.round(Math.PI*roi.r*roi.r);
-  roiInfo.textContent=`centro x=${roi.cx}, y=${roi.cy}, raio=${roi.r} px, diâmetro=${roi.r*2} px, área≈${area} px`;
+  roiInfo.textContent=`centro x=${roi.cx}, y=${roi.cy}, raio=${roi.r} px, diâmetro=${roi.r*2} px, área≈${area} px, ${roiLocked ? "travado" : "destravado"}`;
   manualCxInput.value=roi.cx;manualCyInput.value=roi.cy;manualRInput.value=roi.r;
   diameterInput.value=roi.r*2;diameterSlider.value=Math.min(300,roi.r*2);
   drawRoi();updateButtons();
 }
 function createDefaultRoi(){
   const r=Math.max(2,Math.round(Number(diameterInput.value||70)/2));
+  roiLocked=false;
   roi={cx:Math.round(video.videoWidth/2),cy:Math.round(video.videoHeight/2),r:r};
   updateRoiInfo();
 }
 function setDiameter(v){
   const d=Math.max(4,Math.round(Number(v||70)));
   diameterInput.value=d;diameterSlider.value=Math.min(300,d);
-  if(roi){roi.r=Math.max(2,Math.round(d/2));updateRoiInfo()}
+  if(roi && !roiLocked){
+    roi.r=Math.max(2,Math.round(d/2));
+    updateRoiInfo();
+  }else if(roiLocked){
+    statusEl.textContent="ROI travado. Clique em Destravar ROI para alterar o diâmetro.";
+    diameterInput.value=roi.r*2;
+    diameterSlider.value=Math.min(300,roi.r*2);
+  }
 }
 diameterInput.addEventListener("input",e=>setDiameter(e.target.value));
 diameterSlider.addEventListener("input",e=>setDiameter(e.target.value));
@@ -280,7 +362,7 @@ function pointerModeAt(pt){
   return "recenter";
 }
 roiOverlay.addEventListener("pointerdown",e=>{
-  if(!stream||!roi||isRunning)return;
+  if(!stream||!roi||isRunning||roiLocked)return;
   e.preventDefault();roiOverlay.setPointerCapture(e.pointerId);roiOverlay.classList.add("dragging");
   pointerActive=true;
   const pt=getPointerCanvasPoint(e),vp=canvasToVideoPoint(pt.x,pt.y);
@@ -290,7 +372,7 @@ roiOverlay.addEventListener("pointerdown",e=>{
   else{pointerMode="move";roi.cx=vp.cx;roi.cy=vp.cy;dragOffset.x=0;dragOffset.y=0;updateRoiInfo()}
 });
 roiOverlay.addEventListener("pointermove",e=>{
-  if(!stream||!roi||isRunning)return;
+  if(!stream||!roi||isRunning||roiLocked)return;
   const pt=getPointerCanvasPoint(e);
   if(!pointerActive){
     const m=pointerModeAt(pt);
@@ -308,10 +390,24 @@ roiOverlay.addEventListener("pointerup",endPointer);
 roiOverlay.addEventListener("pointercancel",endPointer);
 
 applyManualRoiBtn.addEventListener("click",()=>{
+  if(roiLocked){
+    statusEl.textContent="ROI travado. Clique em Destravar ROI para aplicar alteração manual.";
+    return;
+  }
   const cx=Math.round(Number(manualCxInput.value)),cy=Math.round(Number(manualCyInput.value)),r=Math.round(Number(manualRInput.value));
   if(!Number.isFinite(cx)||!Number.isFinite(cy)||!Number.isFinite(r)||r<2){alert("Preencha centro x, centro y e raio com valores válidos.");return}
   roi={cx,cy,r};updateRoiInfo();statusEl.textContent=`ROI manual aplicado: x=${cx}, y=${cy}, raio=${r}.`;
 });
+lockRoiBtn.addEventListener("click",()=>{
+  if(!roi)return;
+  roiLocked=!roiLocked;
+  updateRoiInfo();
+  statusEl.textContent=roiLocked
+    ? "ROI travado. A posição e o diâmetro não serão alterados por toque acidental."
+    : "ROI destravado. Você pode mover o círculo e ajustar o diâmetro.";
+  updateButtons();
+});
+
 copyRoiBtn.addEventListener("click",async()=>{
   if(!roi)return;
   const txt=`centro x=${roi.cx}, y=${roi.cy}, raio=${roi.r} px, diâmetro=${roi.r*2} px, área≈${Math.round(Math.PI*roi.r*roi.r)} px`;
@@ -334,7 +430,7 @@ async function startCamera(){
 function stopCamera(){
   if(isRunning)pauseRun();
   if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;video.srcObject=null}
-  cameraInfo.textContent="fechada";statusEl.textContent="Câmera fechada.";updateButtons();
+  roiLocked=false;cameraInfo.textContent="fechada";statusEl.textContent="Câmera fechada.";updateButtons();
 }
 startCameraBtn.addEventListener("click",startCamera);
 stopCameraBtn.addEventListener("click",stopCamera);
@@ -364,7 +460,6 @@ function acquisitionLoop(){
     const t=(now-acquisitionStart)/1000,row=captureStats(t);
     if(row){
       rows.push(row);
-      liveR.textContent=fmt(row.R_mean);liveG.textContent=fmt(row.G_mean);liveB.textContent=fmt(row.B_mean);
       pointCount.textContent=rows.length;
     }
     lastCaptureTime=now;
@@ -373,17 +468,32 @@ function acquisitionLoop(){
 }
 function startRun(){
   if(!stream||!roi)return;
+  roiLocked=true;
+  updateRoiInfo();
+  runCounter += 1;
+  currentRunName = "corrida_" + pad3(runCounter);
   rows=[];peaks=[];acquisitionStart=performance.now();lastCaptureTime=0;isRunning=true;
-  liveR.textContent="—";liveG.textContent="—";liveB.textContent="—";pointCount.textContent="0";
-  peakBody.innerHTML='<tr><td colspan="4" style="text-align:center;color:#6b7280">Aquisição em andamento. Os máximos aparecerão após pausar.</td></tr>';
-  runInfo.textContent="em aquisição";statusEl.textContent="Aquisição em andamento. Os pontos estão sendo guardados internamente.";
+  pointCount.textContent="0";
+  currentRunInfo.textContent=currentRunName;
+  runInfo.textContent="em aquisição";
+  statusEl.textContent=`${currentRunName} em andamento. ROI travado e pontos sendo guardados internamente.`;
   updateButtons();animationId=requestAnimationFrame(acquisitionLoop);
 }
 function pauseRun(){
   isRunning=false;if(animationId)cancelAnimationFrame(animationId);
-  peaks=detectPeaks();renderPeaks();
-  runInfo.textContent="pausada";statusEl.textContent=`Aquisição pausada. ${peaks.length} máximo(s) exibido(s). A série temporal completa ficou salva para o CSV.`;
-  updateButtons();
+  peaks=detectPeaks();
+  showRunPeakMeans(peaks);
+  allRuns.push({
+    corrida:currentRunName,
+    peaks:peaks.map(p=>({...p,corrida:currentRunName})),
+    series:rows.map(r=>({...r,corrida:currentRunName}))
+  });
+  renderAllPeaks();
+  runInfo.textContent="pausada";
+  statusEl.textContent=`${currentRunName} pausada e adicionada automaticamente ao conjunto. As médias dos máximos da corrida foram atualizadas na tela. Total no conjunto: ${allRuns.length}.`;
+  currentRunInfo.textContent="—";
+  rows=[];peaks=[];pointCount.textContent="0";
+  updateSetInfo();updateButtons();
 }
 startRunBtn.addEventListener("click",startRun);
 pauseRunBtn.addEventListener("click",pauseRun);
@@ -409,30 +519,29 @@ function detectPeaks(){
   sel.sort((a,b)=>rows[a.i].tempo_s-rows[b.i].tempo_s);
   return sel.map((p,idx)=>({replicata:idx+1,...rows[p.i],canal_usado:channel,sinal_suavizado:Number(p.score.toFixed(3))}));
 }
-function renderPeaks(){
+function renderAllPeaks(){
   peakBody.innerHTML="";
-  const expected=Math.max(1,Math.floor(Number(numPeaksInput.value||3)));
-  if(!peaks.length){
-    peakBody.innerHTML='<tr><td colspan="4" style="text-align:center;color:#6b7280">Nenhum pico detectado. Verifique o intervalo mínimo e o canal de detecção.</td></tr>';
+  if(!allRuns.length){
+    peakBody.innerHTML='<tr><td colspan="10" style="text-align:center;color:#6b7280">Nenhuma corrida adicionada ainda.</td></tr>';
     return;
   }
-  for(let i=0;i<expected;i++){
-    const p=peaks[i],tr=document.createElement("tr");
-    if(p){
-      tr.innerHTML=`<td>${i+1}</td><td>${br(p.G_mean)}</td><td>${br(p.B_mean)}</td><td>${br(p.R_mean)}</td>`;
-    }else{
-      tr.innerHTML=`<td>${i+1}</td><td>—</td><td>—</td><td>—</td>`;
-    }
+  for(const run of allRuns){
+    const st=statsForPeaks(run.peaks);
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td>${run.corrida}</td><td>${fmtStat(st.G_mean_avg)}</td><td>${fmtStat(st.G_mean_sd)}</td><td>${fmtStat(st.G_mean_cv)}</td><td>${fmtStat(st.B_mean_avg)}</td><td>${fmtStat(st.B_mean_sd)}</td><td>${fmtStat(st.B_mean_cv)}</td><td>${fmtStat(st.R_mean_avg)}</td><td>${fmtStat(st.R_mean_sd)}</td><td>${fmtStat(st.R_mean_cv)}</td>`;
     peakBody.appendChild(tr);
   }
 }
-function clearRun(){
-  if(isRunning)pauseRun();
-  rows=[];peaks=[];liveR.textContent="—";liveG.textContent="—";liveB.textContent="—";pointCount.textContent="0";
-  peakBody.innerHTML='<tr><td colspan="4" style="text-align:center;color:#6b7280">Nenhuma corrida finalizada ainda.</td></tr>';
-  runInfo.textContent="parada";statusEl.textContent="Resultado limpo.";updateButtons();
+function clearAll(){
+  if(isRunning)return;
+  allRuns=[];rows=[];peaks=[];runCounter=0;currentRunName="";
+  clearRunPeakMeans();
+  pointCount.textContent="0";setCount.textContent="0";currentRunInfo.textContent="—";runInfo.textContent="parada";
+  renderAllPeaks();
+  statusEl.textContent="Conjunto limpo. A próxima leitura começará como corrida_001.";
+  updateButtons();
 }
-clearRunBtn.addEventListener("click",clearRun);
+clearAllBtn.addEventListener("click",clearAll);
 
 function makeCsv(data,headers,sep){
   const lines=[headers.join(sep)];
@@ -446,16 +555,41 @@ function downloadBlob(blob,filename){
 }
 function downloadCsv(){
   const sep=separatorInput.value;
-  const peakHeaders=["replicata","tempo_s","R_mean","G_mean","B_mean","canal_usado","sinal_suavizado","roi_cx","roi_cy","roi_r","area_px"];
-  const seriesHeaders=["tempo_s","R_mean","G_mean","B_mean","roi_cx","roi_cy","roi_r","area_px"];
-  const peakCsv=makeCsv(peaks,peakHeaders,sep);
-  const seriesCsv=makeCsv(rows,seriesHeaders,sep);
-  const content=`resumo_picos\n${peakCsv}\n\nserie_temporal\n${seriesCsv}`;
-  downloadBlob(new Blob([content],{type:"text/csv;charset=utf-8"}),"analise_cl_online_roi.csv");
+  const allPeaks=allRuns.flatMap(r=>r.peaks);
+  const allSeries=allRuns.flatMap(r=>r.series);
+
+  const statsRows=allRuns.map(run=>{
+    const st=statsForPeaks(run.peaks);
+    return {
+      corrida: run.corrida,
+      n_replicatas: run.peaks.length,
+      G_mean_medio: st.G_mean_avg,
+      G_mean_DP: st.G_mean_sd,
+      G_mean_CV_pct: st.G_mean_cv,
+      B_mean_medio: st.B_mean_avg,
+      B_mean_DP: st.B_mean_sd,
+      B_mean_CV_pct: st.B_mean_cv,
+      R_mean_medio: st.R_mean_avg,
+      R_mean_DP: st.R_mean_sd,
+      R_mean_CV_pct: st.R_mean_cv
+    };
+  });
+
+  const statsHeaders=["corrida","n_replicatas","G_mean_medio","G_mean_DP","G_mean_CV_pct","B_mean_medio","B_mean_DP","B_mean_CV_pct","R_mean_medio","R_mean_DP","R_mean_CV_pct"];
+  const peakHeaders=["corrida","replicata","G_mean","B_mean","R_mean","tempo_s","canal_usado","sinal_suavizado","roi_cx","roi_cy","roi_r","area_px"];
+  const seriesHeaders=["corrida","tempo_s","R_mean","G_mean","B_mean","roi_cx","roi_cy","roi_r","area_px"];
+
+  const statsCsv=makeCsv(statsRows,statsHeaders,sep);
+  const peakCsv=makeCsv(allPeaks,peakHeaders,sep);
+  const seriesCsv=makeCsv(allSeries,seriesHeaders,sep);
+
+  const content=`estatistica_corridas\n${statsCsv}\n\nresumo_picos\n${peakCsv}\n\nserie_temporal\n${seriesCsv}`;
+  downloadBlob(new Blob([content],{type:"text/csv;charset=utf-8"}),"conjunto_analise_cl_online_roi.csv");
 }
 downloadBtn.addEventListener("click",downloadCsv);
 
 updateButtons();
+updateSetInfo();
 </script>
 </body>
 </html>
